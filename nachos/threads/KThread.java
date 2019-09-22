@@ -276,6 +276,20 @@ public class KThread {
 
         Lib.assertTrue(this != currentThread);
 
+        boolean intStatus = Machine.interrupt().disable();
+		if (this.status != statusFinished){
+			// enable priority donation
+			ThreadQueue waitQueue = ThreadedKernel.scheduler.newThreadQueue(true);
+			waitQueue.acquire(this); //give this access => This now holds the resource of this waitQueue
+			//waitQueue.nextThread();
+			// Assuming priority donation happens as soon as something is added to the queue
+			waitQueue.waitForAccess(currentThread); //put currentThread to this waitQueue so it can donate its priority
+			while(this.status != statusFinished)
+				KThread.yield();
+			//KThread.sleep(); // set the status of current Thread to Blocked
+			// allowing this thread to run with higher priority
+		}
+		Machine.interrupt().restore(intStatus);
     }
 
     /**
