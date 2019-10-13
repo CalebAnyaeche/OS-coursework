@@ -1,5 +1,7 @@
 package nachos.threads;
 
+import java.util.PriorityQueue;
+
 import nachos.machine.*;
 
 /**
@@ -20,6 +22,8 @@ public class Alarm {
                 timerInterrupt();
             }
         });
+
+        this.waitQueue = new PriorityQueue<>();
     }
 
     /**
@@ -29,7 +33,17 @@ public class Alarm {
      * that should be run.
      */
     public void timerInterrupt() {
-        KThread.currentThread().yield();
+        boolean oldInterruptState = Machine.interrupt().disable();
+
+        while (! waitQueue.isEmpty()) {
+            if (waitQueue.peek().wakeupTime <= Machine.timer().getTime()) {
+                waitQueue.poll().thread.ready();
+            } else {
+                break;
+            }
+        }
+
+        Machine.interrupt().restore(oldInterruptState);
     }
 
     /**
@@ -46,9 +60,35 @@ public class Alarm {
      * @see nachos.machine.Timer#getTime()
      */
     public void waitUntil(long x) {
-        // for now, cheat just to get something working (busy waiting is bad)
-        long wakeTime = Machine.timer().getTime() + x;
-        while (wakeTime > Machine.timer().getTime())
-            KThread.yield();
+        /* 1. Disable interrupts
+         * 2. Determine the approximate time at which the thread should wake up.
+         * 3. Queue the current thread, then put it to sleep.
+         * 4. Restore interrupts.
+         */
+        boolean oldInterruptState = Machine.interrupt().disable();
+
+        long wakeupTime = Machine.timer().getTime() + x;
+
+        waitQueue.add(new TimedWaitingProcess(KThread.currentThread(), wakeupTime));
+
+        KThread.sleep();
+
+        Machine.interrupt().restore(oldInterruptState);
     }
+
+    private class TimedWaitingProcess implements Comparable<TimedWaitingProcess> {
+        KThread thread;
+        long wakeupTime;
+
+        TimedWaitingProcess(KThread thread, long wakeupTime) {
+            this.thread = thread;
+            this.wakeupTime = wakeupTime;
+        }
+
+        public int compareTo(TimedWaitingProcess other) {
+            return Long.compare(this.wakeupTime, other.wakeupTime);
+        }
+    }
+
+    private PriorityQueue<TimedWaitingProcess> waitQueue;
 }
