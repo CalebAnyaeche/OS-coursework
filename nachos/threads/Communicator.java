@@ -1,6 +1,7 @@
 package nachos.threads;
 
-import nachos.machine.*;
+import java.util.LinkedList;
+import java.util.List;
 
 /**
  * A <i>communicator</i> allows threads to synchronously exchange 32-bit
@@ -10,10 +11,17 @@ import nachos.machine.*;
  * threads can be paired off at this point.
  */
 public class Communicator {
+    private Lock lock;
+    private List<ThreadInfo> speakers;
+    private List<ThreadInfo> listeners;
+
     /**
      * Allocate a new communicator.
      */
     public Communicator() {
+        lock = new Lock();
+        speakers = new LinkedList<>();  // Chosen due to need to remove from start of list.
+        listeners = new LinkedList<>();
     }
 
     /**
@@ -27,6 +35,19 @@ public class Communicator {
      * @param word the integer to transfer.
      */
     public void speak(int word) {
+        lock.acquire();
+
+        if (! listeners.isEmpty()) {
+            ThreadInfo listener = listeners.remove(0);
+            listener.word = word;
+            listener.condition.wake();
+        } else {
+            ThreadInfo speaker = new ThreadInfo(lock, word);
+            speakers.add(speaker);
+            speaker.condition.sleep();
+        }
+
+        lock.release();
     }
 
     /**
@@ -36,6 +57,33 @@ public class Communicator {
      * @return the integer transferred.
      */
     public int listen() {
-        return 0;
+        lock.acquire();
+
+        int word;
+
+        if (! speakers.isEmpty()) {
+            ThreadInfo speaker = speakers.remove(0);
+            word = speaker.word;
+            speaker.condition.wake();
+        } else {
+            ThreadInfo listener = new ThreadInfo(lock, 0);  // 0 is just a placeholder.
+            listeners.add(listener);
+            listener.condition.sleep();
+            word = listener.word;
+        }
+
+        lock.release();
+
+        return word;
+    }
+
+    private static class ThreadInfo {
+        Condition condition;
+        int word;
+
+        ThreadInfo(Lock lock, int word) {
+            this.condition = new Condition(lock);
+            this.word = word;
+        }
     }
 }
